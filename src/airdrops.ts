@@ -93,17 +93,27 @@ export async function getAllAirdrops(targetLang: string = 'ru'): Promise<Airdrop
 }
 
 export function formatMessage(projects: AirdropProject[], lang: string): string {
-    if (projects.length === 0) return "Нет обновлений.";
-    
-    let message = `🎯 > Airdrop Report (${lang.toUpperCase()})\n\n`;
-    
+    if (projects.length === 0) return "Нет доступных обновлений.";
+
+    // Проверяем, какой язык запросил пользователь
+    const isRu = lang === 'ru';
+
+    // Формируем динамические заголовки в зависимости от языка
+    const title = isRu ? "> Отчет по Airdrop-кампаниям" : `🎯 **Airdrop Report (${lang.toUpperCase()})**`;
+    const labelStatus = isRu ? "Статус" : "Status";
+    const labelReward = isRu ? "Награда" : "Reward";
+    const labelTasks = isRu ? "Задания" : "Tasks";
+    const labelLink = isRu ? "Подробнее" : "More info";
+
+    let message = `${title}\n\n`;
+
     projects.forEach(p => {
         message += `**[${p.source}] ${p.name}**\n`;
-        message += `• Status: ${p.status}\n`;
-        message += `• Reward: ${p.reward}\n`;
-        message += `• Tasks:\n${p.tasks}\n`;
-        message += `🔗 [More info](${p.link})\n\n`;
+        message += `• ${labelStatus}: ${p.status}\n`;
+        message += `• ${labelReward}: ${p.reward}\n`;
+        message += `• ${labelTasks}:\n${p.tasks}\n`;
+        message += `🔗 [${labelLink}](${p.link})\n\n`;
     });
-    
+
     return message.trim();
 }

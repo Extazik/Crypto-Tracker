@@ -1,0 +1,249 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --raised: #21262d;
+  --line: #30363d;
+  --line-soft: #21262d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --grid-line: rgba(139, 148, 158, 0.055);
+}
+
+[data-theme="light"] {
+  --bg: #f2f4f8;
+  --panel: #ffffff;
+  --raised: #f6f8fa;
+  --line: #d8dee4;
+  --line-soft: #e8ecf1;
+  --text: #1f2328;
+  --muted: #656d76;
+  --grid-line: rgba(31, 35, 40, 0.05);
+}
+
+@theme inline {
+  --color-ink: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-linesoft: var(--line-soft);
+  --color-txt: var(--text);
+  --color-mut: var(--muted);
+}
+
+@theme {
+  --color-brand: #3fb950;
+  --color-branddark: #238636;
+  --color-amber: #d29922;
+  --color-flame: #db6d28;
+  --color-sky: #58a6ff;
+  --color-danger: #f85149;
+  --font-display: "Unbounded", "Manrope", sans-serif;
+  --font-body: "Manrope", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html {
+  scrollbar-color: var(--line) var(--bg);
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+.bg-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(1100px 640px at 88% -12%, rgba(63, 185, 80, 0.075), transparent 62%),
+    radial-gradient(900px 560px at -12% 22%, rgba(88, 166, 255, 0.06), transparent 60%),
+    radial-gradient(1000px 620px at 45% 115%, rgba(210, 153, 34, 0.055), transparent 62%);
+}
+
+[data-theme="light"] .bg-fx {
+  background-image: radial-gradient(1100px 640px at 88% -12%, rgba(35, 134, 54, 0.09), transparent 62%),
+    radial-gradient(900px 560px at -12% 22%, rgba(9, 105, 218, 0.07), transparent 60%),
+    radial-gradient(1000px 620px at 45% 115%, rgba(191, 135, 0, 0.07), transparent 62%);
+}
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 30%, transparent 78%);
+}
+
+::selection {
+  background: rgba(63, 185, 80, 0.35);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 8px;
+  border: 2px solid var(--bg);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+@layer components {
+  .panel {
+    @apply bg-panel border border-line rounded-xl;
+  }
+  .input {
+    @apply w-full bg-raised border border-line rounded-lg px-3 py-2 text-sm text-txt outline-none transition-all duration-200 focus:border-brand focus:ring-2 focus:ring-brand/25;
+  }
+  .input::placeholder {
+    color: var(--muted);
+    opacity: 0.75;
+  }
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-lg bg-branddark px-4 py-2 text-sm font-bold text-white transition-all duration-200 hover:bg-brand hover:shadow-[0_0_20px_rgba(63,185,80,0.35)] active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-lg border border-line bg-raised px-4 py-2 text-sm font-semibold text-txt transition-all duration-200 hover:border-mut active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-danger {
+    @apply inline-flex items-center gap-2 rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-bold text-danger transition-all duration-200 hover:bg-danger/20 active:scale-[0.97];
+  }
+  .icon-btn {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-raised text-mut transition-all duration-200 hover:text-txt hover:border-mut active:scale-90;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-raised px-2 py-0.5 text-[11px] font-semibold;
+  }
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.6);
+  cursor: pointer;
+}
+[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+}
+
+input[type="checkbox"].dt-check {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 5px;
+  background: var(--raised);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.18s ease;
+}
+input[type="checkbox"].dt-check:hover {
+  border-color: var(--muted);
+}
+input[type="checkbox"].dt-check:checked {
+  background: #238636;
+  border-color: #3fb950;
+}
+input[type="checkbox"].dt-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(42deg);
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.animate-marquee {
+  animation: marquee 46s linear infinite;
+}
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(63, 185, 80, 0);
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 2.2s ease-out infinite;
+}
+
+@keyframes stripes {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 24px 0;
+  }
+}
+.bar-live {
+  background-image: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.16) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.16) 75%,
+    transparent 75%
+  );
+  background-size: 24px 24px;
+  animation: stripes 1.1s linear infinite;
+}
+
+@keyframes radar {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-radar {
+  animation: radar 7s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.animate-floaty {
+  animation: floaty 5s ease-in-out infinite;
+}

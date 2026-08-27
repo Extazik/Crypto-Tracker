@@ -37,8 +37,3 @@
     "vite": "^6.2.3"
   }
 }
-{
-  "dependencies": {
-    "react-is": "^4.0.0"
-  }
-}

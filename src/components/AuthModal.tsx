@@ -38,6 +38,24 @@ export function AuthModal() {
   const [loginError, setLoginError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Reset inputs whenever the modal is opened
+  React.useEffect(() => {
+    if (isLoginModalOpen) {
+      setIdentifier('');
+      setPassword('');
+      setLoginError('');
+      setShowPassword(false);
+      setRecoveryEmail('');
+      setRecoveryCode('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setRecoveryError('');
+      setRecoverySuccess('');
+      setMode('login');
+      setRecoveryStep(1);
+    }
+  }, [isLoginModalOpen]);
+
   // Recovery Form State (3 steps)
   // step 1: enter email/username
   // step 2: enter 6-digit code
@@ -234,7 +252,7 @@ export function AuthModal() {
           
           {/* ================= MODE: LOGIN ================= */}
           {mode === 'login' && (
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
               
               {loginError && (
                 <div className="p-3 rounded-xl bg-[#F85149]/10 border border-[#F85149]/30 text-xs text-[#F85149] flex items-center gap-2">
@@ -256,9 +274,10 @@ export function AuthModal() {
                     id="input-auth-login"
                     type="text"
                     required
+                    autoComplete="off"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Extazik или Extazik113@gmail.com"
+                    placeholder="Логин или Email"
                     className="w-full pl-9 pr-3 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF] focus:ring-1 focus:ring-[#58A6FF]"
                   />
                 </div>
@@ -289,6 +308,7 @@ export function AuthModal() {
                     id="input-auth-password"
                     type={showPassword ? 'text' : 'password'}
                     required
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Введите пароль"
@@ -367,14 +387,14 @@ export function AuthModal() {
 
               {/* STEP 1: Enter email/login */}
               {recoveryStep === 1 && (
-                <form onSubmit={handleRequestCode} className="space-y-4">
+                <form onSubmit={handleRequestCode} className="space-y-4" autoComplete="off">
                   <p className="text-xs text-[#8B949E]">
-                    Укажите адрес электронной почты администратора <strong className="text-[#F0F6FC]">Extazik113@gmail.com</strong> для получения одноразового кода восстановления.
+                    Укажите ваш email или логин администратора для получения 6-значного кода восстановления.
                   </p>
 
                   <div>
                     <label className="block text-xs font-medium text-[#8B949E] mb-1.5">
-                      Электронная почта администратора
+                      Электронная почта или логин
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8B949E]">
@@ -384,9 +404,10 @@ export function AuthModal() {
                         id="input-recovery-email"
                         type="text"
                         required
+                        autoComplete="off"
                         value={recoveryEmail}
                         onChange={(e) => setRecoveryEmail(e.target.value)}
-                        placeholder="Extazik113@gmail.com"
+                        placeholder="email@example.com или логин"
                         className="w-full pl-9 pr-3 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]"
                       />
                     </div>

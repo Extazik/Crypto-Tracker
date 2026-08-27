@@ -1,303 +1,553 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { AdminUser, AuthState } from '../types';
+import React, { useState } from 'react';
+import { 
+  X, 
+  Lock, 
+  Mail, 
+  User, 
+  KeyRound, 
+  ArrowRight, 
+  CheckCircle2, 
+  AlertCircle, 
+  ShieldCheck, 
+  Eye, 
+  EyeOff, 
+  Sparkles,
+  RefreshCw,
+  Info
+} from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from './Toast';
 
-interface AuthContextType extends AuthState {
-  login: (identifier: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
-  requestPasswordReset: (emailOrUsername: string) => Promise<{ success: boolean; message?: string; error?: string; email?: string; code?: string }>;
-  confirmPasswordReset: (email: string, code: string, newPass: string) => Promise<{ success: boolean; message?: string; error?: string }>;
-  changePassword: (currentPass: string, newPass: string) => Promise<{ success: boolean; message?: string; error?: string }>;
-  isLoginModalOpen: boolean;
-  loginModalMessage: string;
-  openLoginModal: (message?: string) => void;
-  closeLoginModal: () => void;
-  isProfileModalOpen: boolean;
-  setIsProfileModalOpen: (open: boolean) => void;
-  getAuthHeaders: () => Record<string, string>;
-}
+export function AuthModal() {
+  const { 
+    isLoginModalOpen, 
+    loginModalMessage, 
+    closeLoginModal, 
+    login, 
+    requestPasswordReset, 
+    confirmPasswordReset 
+  } = useAuth();
+  const { showToast } = useToast();
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const TOKEN_KEY = 'airdrop_admin_token';
-const USER_KEY = 'airdrop_admin_user';
-
-// Safe JSON parser to prevent 'Unexpected token <' errors when server returns HTML
-async function safeJsonFetch(url: string, options?: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
-  try {
-    const res = await fetch(url, options);
-    const contentType = res.headers.get('content-type') || '';
-    const text = await res.text();
-
-    if (contentType.includes('application/json') || (text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) {
-      try {
-        const json = JSON.parse(text);
-        return { ok: res.ok, status: res.status, data: json };
-      } catch (parseErr) {
-        console.warn(`JSON parse error on ${url}:`, parseErr);
-      }
-    }
-
-    // Response was not valid JSON (e.g. HTML 404/500/gateway page)
-    return { 
-      ok: false, 
-      status: res.status, 
-      data: { success: false, error: res.status === 404 ? 'Эндпоинт не найден' : 'Сервер вернул не JSON ответ' } 
-    };
-  } catch (netErr: any) {
-    return { 
-      ok: false, 
-      status: 0, 
-      data: { success: false, error: netErr?.message || 'Ошибка соединения с сервером' } 
-    };
-  }
-}
-
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem(TOKEN_KEY);
-  });
+  const [mode, setMode] = useState<'login' | 'forgot'>('login');
   
-  const [user, setUser] = useState<AdminUser | null>(() => {
-    const saved = localStorage.getItem(USER_KEY);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return null;
-      }
+  // Login Form State
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Recovery Form State (3 steps)
+  // step 1: enter email/username
+  // step 2: enter 6-digit code
+  // step 3: enter new password
+  const [recoveryStep, setRecoveryStep] = useState<1 | 2 | 3>(1);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [generatedCodeHint, setGeneratedCodeHint] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoverySuccess, setRecoverySuccess] = useState('');
+
+  if (!isLoginModalOpen) return null;
+
+  // Handle Login
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    if (!identifier.trim() || !password.trim()) {
+      setLoginError('Пожалуйста, заполните логин и пароль');
+      return;
     }
-    return null;
-  });
 
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [loginModalMessage, setLoginModalMessage] = useState('');
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+    setIsSubmitting(true);
+    const res = await login(identifier.trim(), password.trim());
+    setIsSubmitting(false);
 
-  const isAuthenticated = !!token && !!user;
-
-  // Verify token on mount if stored
-  useEffect(() => {
-    if (token) {
-      safeJsonFetch('/api/auth/verify', {
-        headers: { Authorization: `Bearer ${token}` },
-      }).then(({ data }) => {
-        if (data && data.success && data.user) {
-          setUser(data.user);
-          localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-        } else if (data && data.status === 401) {
-          // Token expired or invalid
-          logout();
-        }
-      });
-    }
-  }, [token]);
-
-  const getAuthHeaders = (): Record<string, string> => {
-    if (token) {
-      return { Authorization: `Bearer ${token}` };
-    }
-    return {};
-  };
-
-  const login = async (identifier: string, pass: string) => {
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanPass = pass.trim();
-
-    try {
-      const { data } = await safeJsonFetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: cleanId, password: cleanPass }),
-      });
-
-      if (data && data.success && data.token && data.user) {
-        setToken(data.token);
-        setUser(data.data?.user || data.user);
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.data?.user || data.user));
-        setIsLoginModalOpen(false);
-        setLoginModalMessage('');
-        return { success: true };
-      }
-
-      // Fallback for default Extazik credentials if server temporary cold-start
-      if ((cleanId === 'extazik' || cleanId === 'extazik113@gmail.com') && cleanPass === 'Gfnhbjn113') {
-        const fallbackToken = 'adm_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-        const fallbackUser: AdminUser = {
-          username: 'Extazik',
-          email: 'Extazik113@gmail.com',
-          role: 'admin',
-        };
-        setToken(fallbackToken);
-        setUser(fallbackUser);
-        localStorage.setItem(TOKEN_KEY, fallbackToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(fallbackUser));
-        setIsLoginModalOpen(false);
-        setLoginModalMessage('');
-        return { success: true };
-      }
-
-      return { success: false, error: data?.error || 'Неверный логин или пароль' };
-    } catch (err: any) {
-      // Local fallback check
-      if ((cleanId === 'extazik' || cleanId === 'extazik113@gmail.com') && cleanPass === 'Gfnhbjn113') {
-        const fallbackToken = 'adm_' + Math.random().toString(36).substring(2);
-        const fallbackUser: AdminUser = {
-          username: 'Extazik',
-          email: 'Extazik113@gmail.com',
-          role: 'admin',
-        };
-        setToken(fallbackToken);
-        setUser(fallbackUser);
-        localStorage.setItem(TOKEN_KEY, fallbackToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(fallbackUser));
-        setIsLoginModalOpen(false);
-        return { success: true };
-      }
-      return { success: false, error: err?.message || 'Ошибка сети при авторизации' };
+    if (res.success) {
+      showToast('success', 'Добро пожаловать!', 'Вы вошли как администратор Extazik');
+    } else {
+      setLoginError(res.error || 'Неверный логин или пароль');
     }
   };
 
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    setIsProfileModalOpen(false);
-  };
+  // Step 1: Send Reset Code
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
+    if (!recoveryEmail.trim()) {
+      setRecoveryError('Введите ваш Email или логин администратора');
+      return;
+    }
 
-  const requestPasswordReset = async (emailOrUsername: string) => {
-    try {
-      const { data } = await safeJsonFetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrUsername }),
-      });
+    setIsSubmitting(true);
+    const res = await requestPasswordReset(recoveryEmail.trim());
+    setIsSubmitting(false);
 
-      if (data && data.success) {
-        return {
-          success: true,
-          message: data.message,
-          email: data.email,
-          code: data.code,
-        };
+    if (res.success) {
+      if (res.email) setRecoveryEmail(res.email);
+      if (res.code) {
+        setGeneratedCodeHint(res.code);
+        setRecoveryCode('');
       }
-
-      // Offline / fallback code generation
-      const clean = emailOrUsername.trim().toLowerCase();
-      if (clean === 'extazik' || clean === 'extazik113@gmail.com') {
-        const mockCode = '742918';
-        return {
-          success: true,
-          message: 'Код восстановления сгенерирован для Extazik113@gmail.com',
-          email: 'Extazik113@gmail.com',
-          code: mockCode,
-        };
-      }
-
-      return { success: false, error: data?.error || 'Ошибка запроса восстановления' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'Ошибка подключения к серверу' };
+      setRecoveryStep(2);
+      showToast('info', 'Код сброса отправлен', `Проверьте почту ${res.email || recoveryEmail}`);
+    } else {
+      setRecoveryError(res.error || 'Не удалось найти администратора с такими данными');
     }
   };
 
-  const confirmPasswordReset = async (email: string, code: string, newPass: string) => {
-    try {
-      const { data } = await safeJsonFetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code, newPassword: newPass }),
-      });
+  // Step 2: Verify Code
+  const handleVerifyCodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
+    if (!recoveryCode.trim() || recoveryCode.trim().length !== 6) {
+      setRecoveryError('Введите 6-значный цифровой код');
+      return;
+    }
+    setRecoveryStep(3);
+  };
 
-      if (data && data.success && data.token && data.user) {
-        setToken(data.token);
-        setUser(data.user);
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-        return { success: true, message: data.message };
-      }
+  // Step 3: Set New Password
+  const handleSetNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
 
-      // Fallback
-      if (code.length === 6 && newPass.length >= 6) {
-        const fallbackToken = 'adm_' + Math.random().toString(36).substring(2);
-        const fallbackUser: AdminUser = {
-          username: 'Extazik',
-          email: 'Extazik113@gmail.com',
-          role: 'admin',
-        };
-        setToken(fallbackToken);
-        setUser(fallbackUser);
-        localStorage.setItem(TOKEN_KEY, fallbackToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(fallbackUser));
-        return { success: true, message: 'Пароль успешно обновлен' };
-      }
+    if (!newPassword.trim() || newPassword.length < 6) {
+      setRecoveryError('Новый пароль должен быть не менее 6 символов');
+      return;
+    }
 
-      return { success: false, error: data?.error || 'Не удалось сбросить пароль' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'Ошибка сброса пароля' };
+    if (newPassword !== confirmPassword) {
+      setRecoveryError('Пароли не совпадают');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const res = await confirmPasswordReset(recoveryEmail.trim(), recoveryCode.trim(), newPassword.trim());
+    setIsSubmitting(false);
+
+    if (res.success) {
+      setRecoverySuccess('Пароль успешно обновлен! Вы авторизованы.');
+      showToast('success', 'Пароль успешно изменен', 'Вход выполнен автоматически');
+      setTimeout(() => {
+        closeLoginModal();
+        setMode('login');
+        setRecoveryStep(1);
+        setRecoverySuccess('');
+      }, 1800);
+    } else {
+      setRecoveryError(res.error || 'Ошибка сброса пароля');
     }
   };
 
-  const changePassword = async (currentPass: string, newPass: string) => {
-    try {
-      const { data } = await safeJsonFetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({ currentPassword: currentPass, newPassword: newPass }),
-      });
-
-      if (data && data.success) {
-        return { success: true, message: data.message };
-      }
-      return { success: false, error: data?.error || 'Ошибка изменения пароля' };
-    } catch (err: any) {
-      return { success: false, error: err?.message || 'Ошибка сети' };
-    }
-  };
-
-  const openLoginModal = (message?: string) => {
-    if (message) setLoginModalMessage(message);
-    else setLoginModalMessage('');
-    setIsLoginModalOpen(true);
-  };
-
-  const closeLoginModal = () => {
-    setIsLoginModalOpen(false);
-    setLoginModalMessage('');
+  const handleResetModalState = () => {
+    setMode('login');
+    setRecoveryStep(1);
+    setLoginError('');
+    setRecoveryError('');
+    setRecoverySuccess('');
+    closeLoginModal();
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        isAuthenticated,
-        user,
-        token,
-        login,
-        logout,
-        requestPasswordReset,
-        confirmPasswordReset,
-        changePassword,
-        isLoginModalOpen,
-        loginModalMessage,
-        openLoginModal,
-        closeLoginModal,
-        isProfileModalOpen,
-        setIsProfileModalOpen,
-        getAuthHeaders,
-      }}
+    <div 
+      id="auth-modal-overlay"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+      onClick={handleResetModalState}
     >
-      {children}
-    </AuthContext.Provider>
-  );
-};
+      <div 
+        id="auth-modal-container"
+        className="relative w-full max-w-md rounded-2xl bg-[#161B22] border border-[#30363D] shadow-2xl overflow-hidden flex flex-col transition-all"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#30363D] bg-[#0D1117]/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#1f6feb] to-[#58A6FF] flex items-center justify-center text-white shadow-md shadow-[#58A6FF]/20">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-[#F0F6FC]">
+                {mode === 'login' ? 'Вход администратора' : 'Восстановление пароля'}
+              </h2>
+              <p className="text-[11px] text-[#8B949E]">
+                {mode === 'login' ? 'Управление крипто-проектами' : 'Сброс доступа к аккаунту'}
+              </p>
+            </div>
+          </div>
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+          <button
+            id="btn-close-auth-modal"
+            onClick={handleResetModalState}
+            className="p-1.5 rounded-lg text-[#8B949E] hover:text-[#F0F6FC] hover:bg-[#21262D] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Informational notification banner if opened via protected action */}
+        {loginModalMessage && mode === 'login' && (
+          <div className="mx-6 mt-4 p-3 rounded-xl bg-[#58A6FF]/10 border border-[#58A6FF]/30 flex items-start gap-2.5 text-xs text-[#58A6FF]">
+            <Info className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{loginModalMessage}</span>
+          </div>
+        )}
+
+        {/* Tab Selection */}
+        <div className="flex items-center border-b border-[#30363D] px-6 pt-2 bg-[#161B22]">
+          <button
+            id="tab-auth-login"
+            onClick={() => {
+              setMode('login');
+              setLoginError('');
+            }}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all ${
+              mode === 'login'
+                ? 'border-[#58A6FF] text-[#58A6FF]'
+                : 'border-transparent text-[#8B949E] hover:text-[#F0F6FC]'
+            }`}
+          >
+            Вход в систему
+          </button>
+          <button
+            id="tab-auth-forgot"
+            onClick={() => {
+              setMode('forgot');
+              setRecoveryError('');
+            }}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all ${
+              mode === 'forgot'
+                ? 'border-[#58A6FF] text-[#58A6FF]'
+                : 'border-transparent text-[#8B949E] hover:text-[#F0F6FC]'
+            }`}
+          >
+            Восстановление пароля
+          </button>
+        </div>
+
+        {/* Modal Content */}
+        <div className="p-6 space-y-4">
+          
+          {/* ================= MODE: LOGIN ================= */}
+          {mode === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-4">
+              
+              {loginError && (
+                <div className="p-3 rounded-xl bg-[#F85149]/10 border border-[#F85149]/30 text-xs text-[#F85149] flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              {/* Identifier input (Login or Email) */}
+              <div>
+                <label className="block text-xs font-medium text-[#8B949E] mb-1.5">
+                  Логин или Email администратора
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8B949E]">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="input-auth-login"
+                    type="text"
+                    required
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="Extazik или Extazik113@gmail.com"
+                    className="w-full pl-9 pr-3 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF] focus:ring-1 focus:ring-[#58A6FF]"
+                  />
+                </div>
+              </div>
+
+              {/* Password input */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-[#8B949E]">
+                    Пароль
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot');
+                      setRecoveryStep(1);
+                    }}
+                    className="text-[11px] text-[#58A6FF] hover:underline"
+                  >
+                    Забыли пароль?
+                  </button>
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8B949E]">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="input-auth-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Введите пароль"
+                    className="w-full pl-9 pr-10 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF] focus:ring-1 focus:ring-[#58A6FF]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#8B949E] hover:text-[#F0F6FC]"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                id="btn-submit-login"
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#1f6feb] to-[#58A6FF] text-white text-xs font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#1f6feb]/25 disabled:opacity-50 active:scale-[0.99]"
+              >
+                {isSubmitting ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <KeyRound className="w-4 h-4" />
+                    <span>Войти как Администратор</span>
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* ================= MODE: FORGOT / RESET ================= */}
+          {mode === 'forgot' && (
+            <div className="space-y-4">
+              
+              {/* Progress Steps Indicators */}
+              <div className="flex items-center justify-between px-2 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${recoveryStep >= 1 ? 'bg-[#58A6FF] text-white' : 'bg-[#21262D] text-[#8B949E]'}`}>
+                    1
+                  </span>
+                  <span className="text-xs text-[#8B949E]">Почта</span>
+                </div>
+                <div className="h-[1px] w-8 bg-[#30363D]" />
+                <div className="flex items-center gap-2">
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${recoveryStep >= 2 ? 'bg-[#58A6FF] text-white' : 'bg-[#21262D] text-[#8B949E]'}`}>
+                    2
+                  </span>
+                  <span className="text-xs text-[#8B949E]">Код</span>
+                </div>
+                <div className="h-[1px] w-8 bg-[#30363D]" />
+                <div className="flex items-center gap-2">
+                  <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${recoveryStep >= 3 ? 'bg-[#58A6FF] text-white' : 'bg-[#21262D] text-[#8B949E]'}`}>
+                    3
+                  </span>
+                  <span className="text-xs text-[#8B949E]">Новый пароль</span>
+                </div>
+              </div>
+
+              {recoveryError && (
+                <div className="p-3 rounded-xl bg-[#F85149]/10 border border-[#F85149]/30 text-xs text-[#F85149] flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{recoveryError}</span>
+                </div>
+              )}
+
+              {recoverySuccess && (
+                <div className="p-3 rounded-xl bg-[#3FB950]/10 border border-[#3FB950]/30 text-xs text-[#3FB950] flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{recoverySuccess}</span>
+                </div>
+              )}
+
+              {/* STEP 1: Enter email/login */}
+              {recoveryStep === 1 && (
+                <form onSubmit={handleRequestCode} className="space-y-4">
+                  <p className="text-xs text-[#8B949E]">
+                    Укажите адрес электронной почты администратора <strong className="text-[#F0F6FC]">Extazik113@gmail.com</strong> для получения одноразового кода восстановления.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#8B949E] mb-1.5">
+                      Электронная почта администратора
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#8B949E]">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="input-recovery-email"
+                        type="text"
+                        required
+                        value={recoveryEmail}
+                        onChange={(e) => setRecoveryEmail(e.target.value)}
+                        placeholder="Extazik113@gmail.com"
+                        className="w-full pl-9 pr-3 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] placeholder-[#484F58] focus:outline-none focus:border-[#58A6FF]"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    id="btn-request-reset-code"
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 rounded-xl bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Mail className="w-4 h-4" />
+                        <span>Отправить код восстановления</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+
+              {/* STEP 2: Enter 6-digit code */}
+              {recoveryStep === 2 && (
+                <form onSubmit={handleVerifyCodeSubmit} className="space-y-4">
+                  <div className="p-3 rounded-xl bg-[#21262D] border border-[#30363D] text-xs text-[#8B949E] space-y-2">
+                    <div>
+                      Код подтверждения отправлен на <span className="text-[#58A6FF] font-mono">{recoveryEmail}</span>
+                    </div>
+                    {generatedCodeHint && (
+                      <div className="flex items-center justify-between pt-1 border-t border-[#30363D]/80">
+                        <span className="text-[11px] text-[#3FB950]">Тестовый код из письма:</span>
+                        <span className="px-2 py-0.5 rounded bg-[#0D1117] font-mono font-bold text-xs text-[#3FB950] border border-[#3FB950]/30">
+                          {generatedCodeHint}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#8B949E] mb-1.5">
+                      6-значный код подтверждения
+                    </label>
+                    <input
+                      id="input-recovery-code"
+                      type="text"
+                      maxLength={6}
+                      required
+                      value={recoveryCode}
+                      onChange={(e) => setRecoveryCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      className="w-full py-2 px-3 text-center tracking-[0.5em] font-mono text-base font-bold bg-[#0D1117] border border-[#30363D] rounded-xl text-[#58A6FF] focus:outline-none focus:border-[#58A6FF]"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRecoveryStep(1)}
+                      className="w-1/3 py-2 rounded-xl bg-[#21262D] hover:bg-[#30363D] text-xs text-[#8B949E] transition-colors"
+                    >
+                      Назад
+                    </button>
+                    <button
+                      id="btn-verify-recovery-code"
+                      type="submit"
+                      className="w-2/3 py-2 rounded-xl bg-[#58A6FF] hover:bg-[#1f6feb] text-white text-xs font-semibold transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <span>Подтвердить код</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* STEP 3: Enter new password */}
+              {recoveryStep === 3 && (
+                <form onSubmit={handleSetNewPassword} className="space-y-4">
+                  <p className="text-xs text-[#8B949E]">
+                    Придумайте новый пароль для учетной записи <strong className="text-[#F0F6FC]">Extazik</strong> (минимум 6 символов).
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#8B949E] mb-1.5">
+                      Новый пароль
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="input-new-password"
+                        type={showNewPassword ? 'text' : 'password'}
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="Минимум 6 символов"
+                        className="w-full px-3 pr-10 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] focus:outline-none focus:border-[#58A6FF]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#8B949E] hover:text-[#F0F6FC]"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#8B949E] mb-1.5">
+                      Подтверждение нового пароля
+                    </label>
+                    <input
+                      id="input-confirm-password"
+                      type={showNewPassword ? 'text' : 'password'}
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Повторите новый пароль"
+                      className="w-full px-3 py-2 bg-[#0D1117] border border-[#30363D] rounded-xl text-xs text-[#F0F6FC] focus:outline-none focus:border-[#58A6FF]"
+                    />
+                  </div>
+
+                  <button
+                    id="btn-save-new-password"
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-2.5 rounded-xl bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-semibold transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Сохранить новый пароль и войти</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+
+              {/* Back to Login link */}
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setRecoveryStep(1);
+                    setRecoveryError('');
+                  }}
+                  className="text-xs text-[#8B949E] hover:text-[#58A6FF] transition-colors"
+                >
+                  Вернуться ко входу
+                </button>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+
+      </div>
+    </div>
+  );
+}

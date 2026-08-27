@@ -1,0 +1,6 @@
+{
+  "name": "Airdrop & Crypto Project Tracker",
+  "description": "Платформа для отслеживания крипто-проектов, аирдропов, тестнетов, токеномики и прогресса активностей с панелью администратора.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

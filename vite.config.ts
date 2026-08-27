@@ -1,17 +1,31 @@
-import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
+import { defineConfig } from 'vite';
 
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    proxy: {
-      // Все запросы, начинающиеся с /api, Vite будет незаметно перенаправлять на бэкенд
-      '/api': {
-        target: 'http://localhost:5000', // <-- ВНИМАНИЕ: Укажите здесь порт вашего бэкенда (например, 3000, 3001, 5000 или 8080)
-        changeOrigin: true,
-        secure: false,
+export default defineConfig(() => {
+  return {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
       },
     },
-  },
+    server: {
+      // HMR is disabled in AI Studio via DISABLE_HMR env var.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
+      hmr: process.env.DISABLE_HMR !== 'true',
+      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
+      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      
+      // === НАСТРОЙКА ПРОКСИ ДЛЯ БЭКЕНДА ===
+      proxy: {
+        '/api': {
+          target: 'http://localhost:5000', // <-- ВАЖНО: Укажите здесь порт вашего бэкенда
+          changeOrigin: true,
+          secure: false,
+        },
+      },
+    },
+  };
 });

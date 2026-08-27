@@ -53,18 +53,34 @@ function MainApp() {
   const [isDailyResetModalOpen, setIsDailyResetModalOpen] = useState(false);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
 
+  // Вспомогательная функция для проверки ответа сервера
+  const checkJsonResponse = (res: Response) => {
+    const contentType = res.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      throw new Error("Сервер вернул HTML вместо JSON. Проверьте адрес API или настройки прокси.");
+    }
+  };
+
+  // Удобная переменная на случай, если придется писать полный адрес бэкенда (например, 'http://localhost:5000')
+  const API_BASE_URL = ''; 
+
   // Fetch projects from API
   const fetchProjects = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch('/api/projects');
+      const res = await fetch(`${API_BASE_URL}/api/projects`);
+      
+      checkJsonResponse(res); // Проверка на 'Unexpected token <'
+      
       const data = await res.json();
       if (data.success) {
         setProjects(data.data);
+      } else {
+        showToast('error', data.error || 'Ошибка при загрузке проектов');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load projects:', err);
-      showToast('error', 'Не удалось загрузить проекты');
+      showToast('error', 'Не удалось загрузить проекты', err.message);
     } finally {
       setIsLoading(false);
     }
@@ -201,17 +217,24 @@ function MainApp() {
     }
 
     try {
-      if (editingProject) {
-        const res = await fetch(`/api/projects/${editingProject.id}`, {
-          method: 'PUT',
-          headers: { 
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-          },
-          body: JSON.stringify(projectData),
-        });
-        const data = await res.json();
-        if (data.success) {
+      const url = editingProject 
+        ? `${API_BASE_URL}/api/projects/${editingProject.id}` 
+        : `${API_BASE_URL}/api/projects`;
+        
+      const res = await fetch(url, {
+        method: editingProject ? 'PUT' : 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(projectData),
+      });
+
+      checkJsonResponse(res);
+
+      const data = await res.json();
+      if (data.success) {
+        if (editingProject) {
           setProjects((prev) =>
             prev.map((p) => (p.id === editingProject.id ? data.data : p))
           );
@@ -220,28 +243,14 @@ function MainApp() {
           }
           showToast('success', 'Проект успешно обновлен!', data.data.name);
         } else {
-          showToast('error', data.error || 'Ошибка при обновлении проекта');
-        }
-      } else {
-        const res = await fetch('/api/projects', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-          },
-          body: JSON.stringify(projectData),
-        });
-        const data = await res.json();
-        if (data.success) {
           setProjects((prev) => [data.data, ...prev]);
           showToast('success', 'Новый проект добавлен!', data.data.name);
-        } else {
-          showToast('error', data.error || 'Ошибка добавления проекта');
         }
+      } else {
+        showToast('error', data.error || 'Ошибка при сохранении проекта');
       }
     } catch (err: any) {
       showToast('error', 'Ошибка сохранения проекта', err.message);
-      throw err;
     }
   };
 
@@ -253,12 +262,15 @@ function MainApp() {
     }
 
     try {
-      const res = await fetch(`/api/projects/${id}`, { 
+      const res = await fetch(`${API_BASE_URL}/api/projects/${id}`, { 
         method: 'DELETE',
         headers: {
           ...getAuthHeaders(),
         },
       });
+      
+      checkJsonResponse(res);
+      
       const data = await res.json();
       if (data.success) {
         setProjects((prev) => prev.filter((p) => p.id !== id));
@@ -269,8 +281,8 @@ function MainApp() {
       } else {
         showToast('error', data.error || 'Ошибка при удалении проекта');
       }
-    } catch (err) {
-      showToast('error', 'Ошибка при удалении проекта');
+    } catch (err: any) {
+      showToast('error', 'Ошибка при удалении проекта', err.message);
     }
   };
 
@@ -281,24 +293,33 @@ function MainApp() {
     if (!project) return;
     const nextFav = !project.isFavorite;
 
+    // Optimistic UI update
     setProjects((prev) =>
       prev.map((p) => (p.id === id ? { ...p, isFavorite: nextFav } : p))
     );
-
     if (selectedProject?.id === id) {
       setSelectedProject({ ...selectedProject, isFavorite: nextFav });
     }
 
     try {
+      const res = await fetch(`${API_BASE_URL}/api/favorites/${id}`, { 
+        method: nextFav ? 'POST' : 'DELETE' 
+      });
+      
+      checkJsonResponse(res);
+
       if (nextFav) {
-        await fetch(`/api/favorites/${id}`, { method: 'POST' });
         showToast('info', 'Добавлено в избранное', project.name);
       } else {
-        await fetch(`/api/favorites/${id}`, { method: 'DELETE' });
         showToast('info', 'Удалено из избранного', project.name);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      // Revert on error
+      setProjects((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, isFavorite: !nextFav } : p))
+      );
+      showToast('error', 'Не удалось обновить избранное', err.message);
     }
   };
 

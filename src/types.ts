@@ -290,3 +290,16 @@ export const AVAILABLE_TAGS = [
   'Скоро листинг',
   'Ежедневный чек-ин',
 ];
+
+export interface AdminUser {
+  username: string;
+  email: string;
+  role: 'admin';
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: AdminUser | null;
+  token: string | null;
+}
+

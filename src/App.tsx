@@ -26,6 +26,7 @@ import {
   exportProjectsToCSV 
 } from './lib/utils';
 import { ToastProvider, useToast } from './components/Toast';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { FilterSidebar } from './components/FilterSidebar';
 import { ProjectCard } from './components/ProjectCard';
@@ -34,9 +35,12 @@ import { AdminProjectModal } from './components/AdminProjectModal';
 import { CalendarView } from './components/CalendarView';
 import { StatsDashboard } from './components/StatsDashboard';
 import { DailyResetModal } from './components/DailyResetModal';
+import { AuthModal } from './components/AuthModal';
+import { AdminProfileModal } from './components/AdminProfileModal';
 
 function MainApp() {
   const { showToast } = useToast();
+  const { isAuthenticated, getAuthHeaders, openLoginModal } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -191,11 +195,19 @@ function MainApp() {
 
   // Handle Save Project (Create / Edit)
   const handleSaveProject = async (projectData: Partial<Project>) => {
+    if (!isAuthenticated) {
+      openLoginModal('Для сохранения или создания проектов требуется авторизация администратора (Extazik).');
+      return;
+    }
+
     try {
       if (editingProject) {
         const res = await fetch(`/api/projects/${editingProject.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
           body: JSON.stringify(projectData),
         });
         const data = await res.json();
@@ -207,17 +219,24 @@ function MainApp() {
             setSelectedProject(data.data);
           }
           showToast('success', 'Проект успешно обновлен!', data.data.name);
+        } else {
+          showToast('error', data.error || 'Ошибка при обновлении проекта');
         }
       } else {
         const res = await fetch('/api/projects', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
           body: JSON.stringify(projectData),
         });
         const data = await res.json();
         if (data.success) {
           setProjects((prev) => [data.data, ...prev]);
           showToast('success', 'Новый проект добавлен!', data.data.name);
+        } else {
+          showToast('error', data.error || 'Ошибка добавления проекта');
         }
       }
     } catch (err: any) {
@@ -228,8 +247,18 @@ function MainApp() {
 
   // Handle Delete Project
   const handleDeleteProject = async (id: string) => {
+    if (!isAuthenticated) {
+      openLoginModal('Для удаления проекта требуется авторизация администратора (Extazik).');
+      return;
+    }
+
     try {
-      const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/projects/${id}`, { 
+        method: 'DELETE',
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
       const data = await res.json();
       if (data.success) {
         setProjects((prev) => prev.filter((p) => p.id !== id));
@@ -237,6 +266,8 @@ function MainApp() {
           setSelectedProject(null);
         }
         showToast('info', 'Проект удален');
+      } else {
+        showToast('error', data.error || 'Ошибка при удалении проекта');
       }
     } catch (err) {
       showToast('error', 'Ошибка при удалении проекта');
@@ -273,12 +304,20 @@ function MainApp() {
 
   // Open Edit Modal
   const handleOpenEdit = (project: Project) => {
+    if (!isAuthenticated) {
+      openLoginModal('Для редактирования проекта требуется авторизация администратора (Extazik).');
+      return;
+    }
     setEditingProject(project);
     setIsAdminModalOpen(true);
   };
 
   // Open Create Modal
   const handleOpenCreate = () => {
+    if (!isAuthenticated) {
+      openLoginModal('Для добавления нового проекта требуется авторизация администратора (Extazik).');
+      return;
+    }
     setEditingProject(null);
     setIsAdminModalOpen(true);
   };
@@ -550,6 +589,12 @@ function MainApp() {
         onTriggerResetSuccess={(updated) => setProjects(updated)}
       />
 
+      {/* 4. Admin Auth & Password Recovery Modal */}
+      <AuthModal />
+
+      {/* 5. Admin Profile & Password Change Modal */}
+      <AdminProfileModal />
+
     </div>
   );
 }
@@ -557,7 +602,9 @@ function MainApp() {
 export default function App() {
   return (
     <ToastProvider>
-      <MainApp />
+      <AuthProvider>
+        <MainApp />
+      </AuthProvider>
     </ToastProvider>
   );
 }

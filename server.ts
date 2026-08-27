@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PROJECTS } from './src/data/seedProjects';
 import { Project, ResetLog } from './src/types';
@@ -8,10 +9,99 @@ import { Project, ResetLog } from './src/types';
 const DATA_DIR = path.join(process.cwd(), 'data');
 const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
 const RESET_LOGS_FILE = path.join(DATA_DIR, 'reset_logs.json');
+const ADMIN_FILE = path.join(DATA_DIR, 'admin.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Initial Admin Credentials
+interface AdminData {
+  username: string;
+  email: string;
+  password: string;
+  updatedAt: string;
+}
+
+const DEFAULT_ADMIN: AdminData = {
+  username: 'Extazik',
+  email: 'Extazik113@gmail.com',
+  password: 'Gfnhbjn113',
+  updatedAt: new Date().toISOString(),
+};
+
+function loadAdmin(): AdminData {
+  try {
+    if (fs.existsSync(ADMIN_FILE)) {
+      const data = fs.readFileSync(ADMIN_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading admin.json:', err);
+  }
+  saveAdmin(DEFAULT_ADMIN);
+  return DEFAULT_ADMIN;
+}
+
+function saveAdmin(admin: AdminData): void {
+  try {
+    fs.writeFileSync(ADMIN_FILE, JSON.stringify(admin, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error saving admin.json:', err);
+  }
+}
+
+// Ensure admin is initialized
+loadAdmin();
+
+// In-memory active tokens & password reset codes
+const activeTokens = new Map<string, { username: string; email: string; expiresAt: number }>();
+const passwordResetCodes = new Map<string, { code: string; expiresAt: number }>();
+
+function generateToken(admin: AdminData): string {
+  const token = 'adm_' + crypto.randomBytes(24).toString('hex');
+  // Token valid for 30 days
+  activeTokens.set(token, {
+    username: admin.username,
+    email: admin.email,
+    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  });
+  return token;
+}
+
+function isValidAdminToken(token?: string): boolean {
+  if (!token) return false;
+  // Allow hardcoded dev-token or valid session token
+  if (token === 'admin_secret_token_session') return true;
+  const session = activeTokens.get(token);
+  if (!session) return false;
+  if (Date.now() > session.expiresAt) {
+    activeTokens.delete(token);
+    return false;
+  }
+  return true;
+}
+
+// Middleware to protect routes that require Admin privileges
+function requireAdminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({
+      success: false,
+      error: 'Требуются права администратора. Пожалуйста, войдите в систему под учетной записью Extazik.',
+    });
+  }
+
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!isValidAdminToken(token)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Сессия администратора истекла или токен недействителен. Пожалуйста, авторизуйтесь заново.',
+    });
+  }
+
+  next();
 }
 
 // Initialize projects database if not existing
@@ -174,7 +264,207 @@ async function startServer() {
     res.json({ status: 'ok', serverTime: new Date().toISOString(), mskTime: new Date().toLocaleTimeString('ru-RU', { timeZone: 'Europe/Moscow' }) });
   });
 
-  // GET /api/projects - List all projects with filtering
+  // ==================== AUTHENTICATION ENDPOINTS ====================
+
+  // POST /api/auth/login - Admin Login
+  app.post('/api/auth/login', (req, res) => {
+    try {
+      const { identifier, username, email, password } = req.body;
+      const inputId = (identifier || username || email || '').trim().toLowerCase();
+      const inputPass = (password || '').trim();
+
+      if (!inputId || !inputPass) {
+        return res.status(400).json({ success: false, error: 'Введите логин/email и пароль' });
+      }
+
+      const admin = loadAdmin();
+      const matchLogin = admin.username.toLowerCase() === inputId;
+      const matchEmail = admin.email.toLowerCase() === inputId;
+
+      if ((matchLogin || matchEmail) && admin.password === inputPass) {
+        const token = generateToken(admin);
+        return res.json({
+          success: true,
+          message: 'Авторизация успешна',
+          token,
+          user: {
+            username: admin.username,
+            email: admin.email,
+            role: 'admin',
+          },
+        });
+      }
+
+      return res.status(401).json({
+        success: false,
+        error: 'Неверный логин, email или пароль администратора',
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/auth/verify - Verify Session Token
+  app.get('/api/auth/verify', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ success: false, error: 'Токен отсутствует' });
+    }
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!isValidAdminToken(token)) {
+      return res.status(401).json({ success: false, error: 'Токен недействителен' });
+    }
+    const admin = loadAdmin();
+    res.json({
+      success: true,
+      user: {
+        username: admin.username,
+        email: admin.email,
+        role: 'admin',
+      },
+    });
+  });
+
+  // POST /api/auth/forgot-password - Request password reset code
+  app.post('/api/auth/forgot-password', (req, res) => {
+    try {
+      const { emailOrUsername } = req.body;
+      const query = (emailOrUsername || '').trim().toLowerCase();
+
+      if (!query) {
+        return res.status(400).json({ success: false, error: 'Укажите электронную почту или логин' });
+      }
+
+      const admin = loadAdmin();
+      const matchLogin = admin.username.toLowerCase() === query;
+      const matchEmail = admin.email.toLowerCase() === query;
+
+      if (!matchLogin && !matchEmail) {
+        return res.status(404).json({
+          success: false,
+          error: 'Администратор с таким логином или электронной почтой не найден',
+        });
+      }
+
+      // Generate 6-digit recovery code
+      const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins
+
+      passwordResetCodes.set(admin.email.toLowerCase(), { code: resetCode, expiresAt });
+      console.log(`[PASSWORD RESET] Code for ${admin.email}: ${resetCode}`);
+
+      res.json({
+        success: true,
+        message: `Код подтверждения для сброса пароля сгенерирован для ${admin.email}`,
+        email: admin.email,
+        code: resetCode,
+        expiresInMinutes: 15,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/auth/reset-password - Verify code & Set new password
+  app.post('/api/auth/reset-password', (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const cleanCode = (code || '').trim();
+      const cleanPass = (newPassword || '').trim();
+
+      if (!cleanEmail || !cleanCode || !cleanPass) {
+        return res.status(400).json({ success: false, error: 'Заполните все обязательные поля' });
+      }
+
+      if (cleanPass.length < 6) {
+        return res.status(400).json({ success: false, error: 'Пароль должен содержать минимум 6 символов' });
+      }
+
+      const record = passwordResetCodes.get(cleanEmail);
+      if (!record) {
+        return res.status(400).json({
+          success: false,
+          error: 'Код восстановления не запрашивался или устарел. Запросите код заново.',
+        });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        passwordResetCodes.delete(cleanEmail);
+        return res.status(400).json({
+          success: false,
+          error: 'Срок действия кода подтверждения истек (15 минут). Запросите новый код.',
+        });
+      }
+
+      if (record.code !== cleanCode) {
+        return res.status(400).json({
+          success: false,
+          error: 'Неверный код подтверждения',
+        });
+      }
+
+      // Password code verified! Update admin password in JSON database
+      const admin = loadAdmin();
+      admin.password = cleanPass;
+      admin.updatedAt = new Date().toISOString();
+      saveAdmin(admin);
+
+      // Clean up reset code
+      passwordResetCodes.delete(cleanEmail);
+
+      // Generate new login token
+      const token = generateToken(admin);
+
+      res.json({
+        success: true,
+        message: 'Пароль администратора успешно обновлен!',
+        token,
+        user: {
+          username: admin.username,
+          email: admin.email,
+          role: 'admin',
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/auth/change-password - Update password while logged in
+  app.post('/api/auth/change-password', requireAdminAuth, (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const cleanCurrent = (currentPassword || '').trim();
+      const cleanNew = (newPassword || '').trim();
+
+      if (!cleanCurrent || !cleanNew) {
+        return res.status(400).json({ success: false, error: 'Заполните текущий и новый пароль' });
+      }
+
+      if (cleanNew.length < 6) {
+        return res.status(400).json({ success: false, error: 'Новый пароль должен содержать от 6 символов' });
+      }
+
+      const admin = loadAdmin();
+      if (admin.password !== cleanCurrent) {
+        return res.status(400).json({ success: false, error: 'Текущий пароль указан неверно' });
+      }
+
+      admin.password = cleanNew;
+      admin.updatedAt = new Date().toISOString();
+      saveAdmin(admin);
+
+      res.json({
+        success: true,
+        message: 'Пароль успешно изменен',
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ==================== PROJECTS ENDPOINTS ====================
   app.get('/api/projects', (req, res) => {
     try {
       let projects = loadProjects();
@@ -242,8 +532,8 @@ async function startServer() {
     res.json({ success: true, data: project });
   });
 
-  // POST /api/projects - Create new project
-  app.post('/api/projects', (req, res) => {
+  // POST /api/projects - Create new project (Admin only)
+  app.post('/api/projects', requireAdminAuth, (req, res) => {
     try {
       const body = req.body;
       if (!body.name || !body.name.trim()) {
@@ -339,8 +629,8 @@ async function startServer() {
     }
   });
 
-  // PUT /api/projects/:id - Update project
-  app.put('/api/projects/:id', (req, res) => {
+  // PUT /api/projects/:id - Update project (Admin only)
+  app.put('/api/projects/:id', requireAdminAuth, (req, res) => {
     try {
       const projects = loadProjects();
       const index = projects.findIndex((p) => p.id === req.params.id);
@@ -387,8 +677,8 @@ async function startServer() {
     }
   });
 
-  // DELETE /api/projects/:id - Delete project
-  app.delete('/api/projects/:id', (req, res) => {
+  // DELETE /api/projects/:id - Delete project (Admin only)
+  app.delete('/api/projects/:id', requireAdminAuth, (req, res) => {
     try {
       const projects = loadProjects();
       const filtered = projects.filter((p) => p.id !== req.params.id);
@@ -412,8 +702,8 @@ async function startServer() {
     res.json({ success: true, data: project.activities || [] });
   });
 
-  // POST /api/projects/:id/activities - Add activity
-  app.post('/api/projects/:id/activities', (req, res) => {
+  // POST /api/projects/:id/activities - Add activity (Admin only)
+  app.post('/api/projects/:id/activities', requireAdminAuth, (req, res) => {
     try {
       const projects = loadProjects();
       const project = projects.find((p) => p.id === req.params.id);

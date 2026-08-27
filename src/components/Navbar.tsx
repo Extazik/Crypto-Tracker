@@ -12,10 +12,15 @@ import {
   CheckCircle2, 
   Flame,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Shield,
+  ShieldAlert,
+  LogIn,
+  UserCheck
 } from 'lucide-react';
 import { Project } from '../types';
 import { getProjectProgress, calculateCountdown, formatDate } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
   activeTab: 'projects' | 'calendar' | 'stats' | 'reset-logs';
@@ -36,6 +41,7 @@ export function Navbar({
   onExportCSV,
   onSelectProject,
 }: NavbarProps) {
+  const { isAuthenticated, user, openLoginModal, setIsProfileModalOpen } = useAuth();
   const [mskTime, setMskTime] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -272,10 +278,41 @@ export function Navbar({
               <span>Экспорт CSV</span>
             </button>
 
+            {/* Admin Profile / Login Button */}
+            {isAuthenticated ? (
+              <button
+                id="btn-admin-profile"
+                onClick={() => setIsProfileModalOpen(true)}
+                title="Панель администратора Extazik"
+                className="flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-[#161B22] hover:bg-[#21262D] border border-[#3FB950]/40 text-[#3FB950] shadow-sm transition-all"
+              >
+                <Shield className="w-3.5 h-3.5 text-[#3FB950]" />
+                <span className="hidden sm:inline">{user?.username || 'Extazik'}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#3FB950] animate-pulse"></span>
+              </button>
+            ) : (
+              <button
+                id="btn-open-login-modal"
+                onClick={() => openLoginModal()}
+                title="Вход для администратора"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-[#161B22] hover:bg-[#21262D] border border-[#30363D] text-[#8B949E] hover:text-[#F0F6FC] transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5 text-[#58A6FF]" />
+                <span>Войти</span>
+              </button>
+            )}
+
             {/* Add Project Admin Button */}
             <button
               id="btn-add-project"
-              onClick={onOpenAddModal}
+              onClick={() => {
+                if (isAuthenticated) {
+                  onOpenAddModal();
+                } else {
+                  openLoginModal('Для добавления новых проектов требуется авторизация администратора (Extazik).');
+                }
+              }}
+              title={isAuthenticated ? 'Добавить новый проект' : 'Требуются права администратора'}
               className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-[#238636] hover:bg-[#2ea043] text-white shadow-sm transition-all active:scale-95"
             >
               <Plus className="w-4 h-4" />

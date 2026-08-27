@@ -22,7 +22,8 @@ import {
   PieChart as PieIcon,
   TrendingUp,
   Download,
-  AlertTriangle
+  AlertTriangle,
+  Lock
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import confetti from 'canvas-confetti';
@@ -43,6 +44,7 @@ import {
   exportToICS
 } from '../lib/utils';
 import { useToast } from './Toast';
+import { useAuth } from '../context/AuthContext';
 
 interface ProjectDetailsModalProps {
   project: Project | null;
@@ -62,6 +64,7 @@ export function ProjectDetailsModal({
   onOpenEditModal,
 }: ProjectDetailsModalProps) {
   const { showToast } = useToast();
+  const { isAuthenticated, getAuthHeaders, openLoginModal } = useAuth();
   const [newActivityName, setNewActivityName] = useState('');
   const [newActivityType, setNewActivityType] = useState<any>('testnet');
   const [newActivityLink, setNewActivityLink] = useState('');
@@ -133,12 +136,20 @@ export function ProjectDetailsModal({
   // Add new activity
   const handleAddActivity = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      openLoginModal('Для добавления активностей в проект требуется войти как администратор Extazik.');
+      return;
+    }
+
     if (!newActivityName.trim()) return;
 
     try {
       const res = await fetch(`/api/projects/${project.id}/activities`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           name: newActivityName.trim(),
           type: newActivityType,
@@ -157,6 +168,8 @@ export function ProjectDetailsModal({
         setIsDailyReset(false);
         setShowAddActivityForm(false);
         showToast('success', 'Активность добавлена');
+      } else {
+        showToast('error', data.error || 'Ошибка добавления активности');
       }
     } catch (err) {
       showToast('error', 'Ошибка добавления активности');
@@ -230,22 +243,33 @@ export function ProjectDetailsModal({
             </button>
 
             <button
-              onClick={() => onOpenEditModal(project)}
+              onClick={() => {
+                if (isAuthenticated) {
+                  onOpenEditModal(project);
+                } else {
+                  openLoginModal('Для редактирования проекта требуется авторизация администратора (Extazik).');
+                }
+              }}
+              title={isAuthenticated ? 'Редактировать проект' : 'Требуются права администратора'}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1f6feb]/20 border border-[#58A6FF]/40 text-xs text-[#58A6FF] hover:bg-[#1f6feb]/30 transition-colors font-medium"
             >
-              <Edit3 className="w-3.5 h-3.5" />
+              {isAuthenticated ? <Edit3 className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-[#58A6FF]" />}
               <span>Редактировать</span>
             </button>
 
             <button
               onClick={() => {
+                if (!isAuthenticated) {
+                  openLoginModal('Для удаления проекта требуется авторизация администратора (Extazik).');
+                  return;
+                }
                 if (confirm(`Удалить проект "${project.name}"?`)) {
                   onDeleteProject(project.id);
                   onClose();
                 }
               }}
               className="p-1.5 rounded-lg text-[#8B949E] hover:text-[#F85149] hover:bg-[#F85149]/10 transition-colors"
-              title="Удалить проект"
+              title={isAuthenticated ? 'Удалить проект' : 'Удаление доступно только администратору'}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -539,7 +563,13 @@ export function ProjectDetailsModal({
                   {progress.percent}% выполнено
                 </span>
                 <button
-                  onClick={() => setShowAddActivityForm(!showAddActivityForm)}
+                  onClick={() => {
+                    if (isAuthenticated) {
+                      setShowAddActivityForm(!showAddActivityForm);
+                    } else {
+                      openLoginModal('Для добавления активностей в проект требуется авторизация администратора (Extazik).');
+                    }
+                  }}
                   className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-[#21262D] text-[#58A6FF] border border-[#30363D] hover:bg-[#30363D]"
                 >
                   <Plus className="w-3.5 h-3.5" />

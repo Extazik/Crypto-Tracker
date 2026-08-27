@@ -32,8 +32,8 @@ export function AuthModal() {
   const [mode, setMode] = useState<'login' | 'forgot'>('login');
   
   // Login Form State
-  const [identifier, setIdentifier] = useState('Extazik');
-  const [password, setPassword] = useState('Gfnhbjn113');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,7 +43,7 @@ export function AuthModal() {
   // step 2: enter 6-digit code
   // step 3: enter new password
   const [recoveryStep, setRecoveryStep] = useState<1 | 2 | 3>(1);
-  const [recoveryEmail, setRecoveryEmail] = useState('Extazik113@gmail.com');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
   const [generatedCodeHint, setGeneratedCodeHint] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
@@ -74,13 +74,6 @@ export function AuthModal() {
     }
   };
 
-  // Quick fill helper
-  const handleFillCredentials = () => {
-    setIdentifier('Extazik');
-    setPassword('Gfnhbjn113');
-    setLoginError('');
-  };
-
   // Step 1: Send Reset Code
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +91,7 @@ export function AuthModal() {
       if (res.email) setRecoveryEmail(res.email);
       if (res.code) {
         setGeneratedCodeHint(res.code);
-        setRecoveryCode(res.code); // pre-populate for convenience
+        setRecoveryCode('');
       }
       setRecoveryStep(2);
       showToast('info', 'Код сброса отправлен', `Проверьте почту ${res.email || recoveryEmail}`);
@@ -309,23 +302,6 @@ export function AuthModal() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-              </div>
-
-              {/* Preset credentials quick filler */}
-              <div className="p-3 rounded-xl bg-[#0D1117] border border-[#30363D] flex items-center justify-between text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-[11px] text-[#8B949E] block">Учетные данные по умолчанию:</span>
-                  <div className="font-mono text-[11px] text-[#F0F6FC]">
-                    <span>Extazik</span> / <span>Extazik113@gmail.com</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleFillCredentials}
-                  className="px-2 py-1 rounded-lg bg-[#21262D] hover:bg-[#30363D] text-[11px] text-[#58A6FF] transition-colors"
-                >
-                  Заполнить
-                </button>
               </div>
 
               {/* Submit Button */}
